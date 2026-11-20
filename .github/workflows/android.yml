@@ -31,11 +31,6 @@ jobs:
 
           SDKMANAGER=$(find /usr/local/lib/android/sdk/cmdline-tools -name sdkmanager -type f | head -n 1)
 
-          if [ -z "$SDKMANAGER" ]; then
-            echo "No se encontro sdkmanager"
-            exit 1
-          fi
-
           yes | "$SDKMANAGER" --sdk_root=/usr/local/lib/android/sdk --licenses || true
 
           "$SDKMANAGER" --sdk_root=/usr/local/lib/android/sdk --install \
@@ -51,14 +46,79 @@ jobs:
           SETTINGS=$(find proyecto -name settings.gradle.kts -print -quit)
 
           if [ -z "$SETTINGS" ]; then
-            echo "No se encontro settings.gradle.kts"
+            echo "No se encontro el proyecto Android"
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "Proyecto encontrado en: $PROJECT_DIR"
+      - name: Corregir Java y Kotlin
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          project = Path(os.environ["PROJECT_DIR"])
+          gradle_file = project / "app" / "build.gradle.kts"
+
+          if not gradle_file.exists():
+              raise SystemExit("No se encontro app/build.gradle.kts")
+
+          content = gradle_file.read_text()
+
+          match = re.search(r'\bandroid\s*\{', content)
+          if not match:
+              raise SystemExit("No se encontro el bloque android")
+
+          opening = content.find("{", match.start())
+          depth = 1
+          i = opening + 1
+
+          while i < len(content) and depth:
+              if content[i] == "{":
+                  depth += 1
+              elif content[i] == "}":
+                  depth -= 1
+              i += 1
+
+          if depth:
+              raise SystemExit("Bloque android incompleto")
+
+          block = content[opening + 1:i - 1]
+
+          block = re.sub(
+              r'compileOptions\s*\{.*?\}',
+              '',
+              block,
+              flags=re.S
+          )
+
+          block += """
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+          """
+
+          content = content[:opening + 1] + block + content[i - 1:]
+
+          kotlin_block = re.search(
+              r'kotlinOptions\s*\{.*?\}',
+              content,
+              flags=re.S
+          )
+
+          if kotlin_block:
+              replacement = 'kotlinOptions { jvmTarget = "17" }'
+              content = content[:kotlin_block.start()] + replacement + content[kotlin_block.end():]
+          else:
+              content += '\n\nkotlinOptions {\n    jvmTarget = "17"\n}\n'
+
+          gradle_file.write_text(content)
+          print("Configuracion Java/Kotlin actualizada")
+          PY
 
       - name: Preparar Gradle
         uses: gradle/actions/setup-gradle@v4
