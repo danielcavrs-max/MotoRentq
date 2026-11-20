@@ -53,7 +53,7 @@ jobs:
           PROJECT_DIR=$(dirname "$SETTINGS")
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Corregir Java y Kotlin
+      - name: Corregir compatibilidad Java
         run: |
           python3 - <<'PY'
           import os
@@ -88,36 +88,28 @@ jobs:
 
           block = content[opening + 1:i - 1]
 
-          block = re.sub(
-              r'compileOptions\s*\{.*?\}',
-              '',
-              block,
-              flags=re.S
-          )
-
-          block += """
+          compile_options = """
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
                   targetCompatibility = JavaVersion.VERSION_17
               }
           """
 
-          content = content[:opening + 1] + block + content[i - 1:]
-
-          kotlin_block = re.search(
-              r'kotlinOptions\s*\{.*?\}',
-              content,
-              flags=re.S
-          )
-
-          if kotlin_block:
-              replacement = 'kotlinOptions { jvmTarget = "17" }'
-              content = content[:kotlin_block.start()] + replacement + content[kotlin_block.end():]
+          if re.search(r'\bcompileOptions\s*\{', block):
+              block = re.sub(
+                  r'compileOptions\s*\{.*?\}',
+                  compile_options,
+                  block,
+                  count=1,
+                  flags=re.S
+              )
           else:
-              content += '\n\nkotlinOptions {\n    jvmTarget = "17"\n}\n'
+              block += "\n" + compile_options
 
+          content = content[:opening + 1] + block + content[i - 1:]
           gradle_file.write_text(content)
-          print("Configuracion Java/Kotlin actualizada")
+
+          print("Java configurado en version 17")
           PY
 
       - name: Preparar Gradle
