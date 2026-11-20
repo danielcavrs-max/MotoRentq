@@ -29,18 +29,24 @@ jobs:
         run: |
           mkdir proyecto
           unzip -q *.zip -d proyecto
-          find proyecto -name settings.gradle.kts
+          SETTINGS=$(find proyecto -name settings.gradle.kts -print -quit)
+          if [ -z "$SETTINGS" ]; then
+            echo "No se encontro settings.gradle.kts"
+            exit 1
+          fi
+          echo "PROJECT_DIR=$(dirname "$SETTINGS")" >> "$GITHUB_ENV"
 
-      - name: Compilar APK
-        uses: gradle/gradle-build-action@v3
+      - name: Preparar Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-          arguments: assembleDebug
-          build-root-directory: proyecto
+
+      - name: Compilar APK
+        run: cd "$PROJECT_DIR" && gradle assembleDebug
 
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
           name: MotoRent-APK
-          path: proyecto/app/build/outputs/apk/debug/app-debug.apk
+          path: proyecto/**/app/build/outputs/apk/debug/app-debug.apk
           
